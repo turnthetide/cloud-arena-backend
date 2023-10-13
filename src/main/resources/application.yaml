@@ -1,0 +1,38 @@
+quarkus:
+  datasource:
+    db-kind: postgresql
+
+    devservices:
+      port: 8432
+
+  flyway:
+    table: ca_schema_history
+    migrate-at-start: true
+
+  oidc:
+    auth-server-url: ${KEYCLOAK_BASE_URL}/realms/arena
+    client-id: arena-backend
+    tls:
+      verification: none
+
+  keycloak:
+    policy-enforcer:
+      enable: true
+    admin-client:
+      server-url: ${KEYCLOAK_BASE_URL}
+      realm: arena
+      client-id: quarkus-client
+      client-secret: ${KEYCLOAK_ADMIN_CREDENTIALS_SECRET}
+      username:
+      password:
+      grant-type: CLIENT_CREDENTIALS
+
+"%dev":
+  quarkus:
+    datasource:
+      username: arena
+      password: arena
+      jdbc:
+        url: jdbc:postgresql://localhost:5432/arena
+      reactive:
+        url: postgresql://localhost:5432/arena

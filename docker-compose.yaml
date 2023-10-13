@@ -1,0 +1,41 @@
+version: '3'
+
+services:
+
+  database:
+    image: postgres:16
+    ports:
+      - "5432:5432"
+    env_file:
+      - .env
+    volumes:
+      - db-data:/var/lib/postgresql/data/
+      - ./env/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  pgadmin:
+    image: dpage/pgadmin4
+    ports:
+      - "5438:80"
+    env_file:
+      - .env
+    depends_on:
+      - database
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin/
+
+  auth:
+    image: quay.io/keycloak/keycloak:22.0.4
+    ports:
+      - "9080:8080"
+    env_file:
+      - .env
+    depends_on:
+      - database
+    entrypoint:
+      - "/opt/keycloak/bin/kc.sh"
+    command:
+      - "start-dev"
+
+volumes:
+  db-data: {}
+  pgadmin-data: {}
