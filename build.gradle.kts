@@ -1,10 +1,10 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
+    id("io.quarkus")
     kotlin("jvm") version "1.8.10"
     kotlin("plugin.allopen") version "1.8.10"
     kotlin("plugin.serialization") version "1.8.10"
-    id("io.quarkus")
 }
 
 repositories {
@@ -18,7 +18,7 @@ val quarkusPlatformVersion: String by project
 
 dependencies {
     implementation(enforcedPlatform("${quarkusPlatformGroupId}:${quarkusPlatformArtifactId}:${quarkusPlatformVersion}"))
-    implementation("io.vertx:vertx-codegen:4.4.1:processor")
+//    implementation("io.vertx:vertx-codegen:4.4.1:processor")
     implementation("io.quarkus:quarkus-core")
     implementation("io.quarkus:quarkus-mutiny")
     implementation("io.quarkus:quarkus-vertx")

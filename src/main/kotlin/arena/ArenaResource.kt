@@ -1,6 +1,7 @@
 package arena
 
 import io.quarkus.security.Authenticated
+import io.smallrye.common.annotation.Blocking
 import io.smallrye.mutiny.Multi
 import io.smallrye.mutiny.Uni
 import jakarta.inject.Inject
@@ -13,6 +14,7 @@ import org.jboss.resteasy.reactive.NoCache
 
 @Tag(name = "arena")
 @Path("/arena/api/v1/")
+@Blocking
 class ArenaResource {
 
     @Inject
@@ -36,6 +38,7 @@ class ArenaResource {
 
     @GET
     @Path("tournaments")
+    @Blocking
     fun getTournaments(): Multi<Tournament> = arenaDao.getTournaments()
 
     @GET
@@ -54,7 +57,7 @@ class ArenaResource {
     @Path("players/{playerId}")
     fun getPlayer(
         @PathParam("playerId") playerId: UuidAsText,
-    ): Player = keycloakService.getPlayer(playerId)
+    ): Uni<Player> = keycloakService.getPlayer(playerId)
 
     @PUT
     @Path("tournaments/{tournamentId}")

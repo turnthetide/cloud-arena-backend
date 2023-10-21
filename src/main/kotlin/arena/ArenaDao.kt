@@ -36,9 +36,9 @@ class ArenaDao {
     fun PgPool.forUpdate(@Language("PostgreSQL") sql: String): SqlTemplate<MutableMap<String, Any>, SqlResult<Void>> =
         SqlTemplate.forUpdate(this, sql)
 
-    private fun mapToTournament() =
-        RowMapper<Tournament> { row ->
-            Tournament(
+    private fun mapToTournamentEntity() =
+        RowMapper<TournamentEntity> { row ->
+            TournamentEntity(
                 row.getUUID("id"),
                 row.getString("name"),
                 TournamentSettings(
@@ -53,9 +53,17 @@ class ArenaDao {
                     note = row.getString("note"),
                 ),
                 row.getBoolean("naf"),
-                keycloakService.getPlayer(row.getUUID("organizer")),
+                row.getUUID("organizer"),
             )
         }
+
+    data class TournamentEntity(
+        val id: UuidAsText,
+        val name: String,
+        val settings: TournamentSettings,
+        val naf: Boolean,
+        val organizerId: UuidAsText,
+    )
 
     fun getTournaments(): Multi<Tournament> =
         client.forQuery(
@@ -79,9 +87,24 @@ class ArenaDao {
                     ORDER BY start DESC
             """.trimIndent()
         )
-            .mapTo(mapToTournament())
+            .mapTo(mapToTournamentEntity())
             .execute(mutableMapOf())
-            .onItem().transformToMulti(RowSet<Tournament>::toMulti)
+            .onItem().transformToMulti(RowSet<TournamentEntity>::toMulti)
+            .onItem().transformToUni { entity ->
+                entityToTournament(entity)
+            }.concatenate()
+
+    private fun entityToTournament(entity: TournamentEntity): Uni<Tournament> =
+        keycloakService.getPlayer(entity.organizerId)
+            .onItem().transform { organizer ->
+                Tournament(
+                    entity.id,
+                    entity.name,
+                    entity.settings,
+                    entity.naf,
+                    organizer,
+                )
+            }
 
     fun getTournament(tournamentId: UuidAsText): Uni<Tournament> =
         client.forQuery(
@@ -106,9 +129,13 @@ class ArenaDao {
                         id = #{id}
             """.trimIndent()
         )
-            .mapTo(mapToTournament())
+            .mapTo(mapToTournamentEntity())
             .execute(mutableMapOf("id" to tournamentId))
-            .map { it.first() }
+            .onItem().transformToMulti(RowSet<TournamentEntity>::toMulti)
+            .toUni()
+            .onItem().transformToUni { entity ->
+                entityToTournament(entity)
+            }
 
     fun createTournament(
         tournament: TournamentCreation,

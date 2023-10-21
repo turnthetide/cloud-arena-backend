@@ -1,7 +1,11 @@
 package arena
 
 import arena.ArenaResource.Player
+import io.quarkus.cache.CacheResult
+import io.smallrye.mutiny.Uni
+import io.vertx.mutiny.core.Vertx
 import jakarta.enterprise.context.ApplicationScoped
+import jakarta.enterprise.context.control.ActivateRequestContext
 import jakarta.inject.Inject
 import org.keycloak.admin.client.Keycloak
 import org.keycloak.representations.idm.UserRepresentation
@@ -15,15 +19,21 @@ class KeycloakService {
     @Inject
     lateinit var keycloak: Keycloak
 
-//    @Blocking
-//    @CacheResult(cacheName = "players")
-    fun getPlayer(playerId: UUID): Player {
-        return keycloak.realm(realm)
-            .users()
-            .get(playerId.toString())
-            .toRepresentation()
-            .toPlayer()
-    }
+    @Inject
+    lateinit var vertx: Vertx
+
+    @ActivateRequestContext
+    @CacheResult(cacheName = "players")
+    fun getPlayer(playerId: UUID): Uni<Player> =
+        vertx.executeBlocking(
+            Uni.createFrom().item {
+                keycloak.realm(realm)
+                    .users()
+                    .get(playerId.toString())
+                    .toRepresentation()
+                    .toPlayer()
+            }
+        )
 
     private fun UserRepresentation.toPlayer(): Player =
         Player(

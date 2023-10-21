@@ -1,0 +1,97 @@
+
+### Get Token
+POST http://localhost:9080/realms/arena/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type = password & username = teg & password = teg & client_id = arena-backend & client_secret = aI4udjpn5GmSc23GsQSglVL2TpjFOdZM & scope = openid
+
+> {% client.global.set("auth_token", response.body.access_token); %}
+
+<> 2023-10-13T231635.200.json
+<> 2023-10-13T223740.200.json
+<> 2023-10-13T172249.200.json
+<> 2023-10-13T165004.200.json
+<> 2023-10-13T120428.200.json
+
+### ME
+GET http://localhost:8080/arena/api/v1/me
+Authorization: Bearer {{auth_token}}
+
+<> 2023-10-13T165229.200.json
+<> 2023-10-13T151906.200.json
+
+### Get Player
+GET http://localhost:8080/arena/api/v1/players/{{playerId}}
+Authorization: Bearer {{auth_token}}
+
+<> 2023-10-13T231603.200.json
+<> 2023-10-13T165231.200.json
+<> 2023-10-13T165013.500.json
+<> 2023-10-13T123241.500.json
+
+### Create Tournament
+
+POST http://localhost:8080/arena/api/v1/tournaments
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+{
+  "name": "Tournament 2",
+  "settings": {
+    "variant": "BloodBowl2020",
+    "location": {
+      "address1": "Via della Pace 1",
+      "address2": "",
+      "city": "Carpi",
+      "state": "MO",
+      "zip": "41012",
+      "nation": "Italy"
+    },
+    "start": "2023-12-30",
+    "end": "2023-12-31",
+    "type": "Open",
+    "style": "Swiss",
+    "rounds": 6,
+    "squads": true,
+    "note": "note"
+  }
+}
+
+<> 2023-10-13T172357.200.txt
+<> 2023-10-13T172255.500.json
+<> 2023-10-13T172031.200.txt
+<> 2023-10-13T172016.200.txt
+<> 2023-10-13T171929.500.json
+<> 2023-10-13T171731.500.json
+<> 2023-10-13T171337.500.json
+<> 2023-10-13T171239.500.json
+<> 2023-10-13T171036.500.json
+<> 2023-10-13T170958.500.json
+<> 2023-10-13T170837.500.json
+<> 2023-10-13T170144.500.json
+<> 2023-10-13T170127.500.json
+<> 2023-10-13T170037.500.json
+<> 2023-10-13T165921.500.json
+<> 2023-10-13T165252.500.json
+<> 2023-10-13T165224.500.json
+
+### Get Tounaments
+GET http://localhost:8080/arena/api/v1/tournaments
+Authorization: Bearer {{auth_token}}
+
+<> 2023-10-13T231638.500.json
+<> 2023-10-13T224847.500.json
+<> 2023-10-13T224630.500.json
+<> 2023-10-13T224611.500.json
+<> 2023-10-13T224301.500.json
+<> 2023-10-13T224226.500.json
+<> 2023-10-13T223743.500.json
+<> 2023-10-13T174005.500.json
+<> 2023-10-13T173510.500.json
+<> 2023-10-13T173358.500.json
+<> 2023-10-13T173248.500.json
+<> 2023-10-13T173222.500.json
+<> 2023-10-13T172847.500.json
+<> 2023-10-13T172759.500.json
+<> 2023-10-13T172523.500.json
+<> 2023-10-13T172449.500.json
