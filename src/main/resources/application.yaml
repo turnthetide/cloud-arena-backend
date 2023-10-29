@@ -1,4 +1,10 @@
 quarkus:
+
+  log:
+    category:
+      "arena":
+        level: DEBUG
+
   datasource:
     db-kind: postgresql
 
@@ -16,8 +22,8 @@ quarkus:
       verification: none
 
   keycloak:
-    policy-enforcer:
-      enable: true
+#    policy-enforcer:
+#      enable: true
     admin-client:
       server-url: ${KEYCLOAK_BASE_URL}
       realm: arena
