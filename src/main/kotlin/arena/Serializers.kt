@@ -17,6 +17,8 @@ object UuidAsTextSerializer : KSerializer<UUID> {
     override fun deserialize(decoder: Decoder): UUID = UUID.fromString(decoder.decodeString())
 }
 
+fun String.toUuid() = UuidAsText.fromString(this)
+
 //typealias Day = @Serializable(DaySerializer::class) LocalDate
 //
 //object DaySerializer : KSerializer<LocalDate> {

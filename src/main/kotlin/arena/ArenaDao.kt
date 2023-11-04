@@ -58,6 +58,17 @@ class ArenaDao {
                 )
             }
 
+    private fun mapToPlayerInscription() =
+            RowMapper<PlayerInscription> { row ->
+                PlayerInscription(
+                        row.getUUID("playerid"),
+                        row.getString("teamname"),
+                        row.getString("teamrace"),
+                        row.getString("nafscore"),
+                        row.getBoolean("substitute"),
+                )
+            }
+
     data class TournamentEntity(
             val id: UuidAsText,
             val name: String,
@@ -139,15 +150,16 @@ class ArenaDao {
                     }
 
     fun createTournament(
+            id: UuidAsText = UuidAsText.randomUUID(),
             tournament: TournamentCreation,
             organizer: String,
-            id: UuidAsText = UuidAsText.randomUUID()
+            author: UuidAsText,
     ): Uni<String> =
 
             client.forUpdate(
                     """
-            INSERT INTO ca_tournaments (id, name, variant, location, start, "end", type, style, rounds, squads, note, organizer)
-            VALUES (#{id}, #{name}, #{variant}, #{location}, #{start}, #{end}, #{type}, #{style}, #{rounds}, #{squads}, #{note}, #{organizer})
+            INSERT INTO ca_tournaments (id, name, variant, location, start, "end", type, style, rounds, squads, note, organizer, created, createdBy, updated, updatedBy)
+            VALUES (#{id}, #{name}, #{variant}, #{location}, #{start}, #{end}, #{type}, #{style}, #{rounds}, #{squads}, #{note}, #{organizer}, now(), #{author}, now(), #{author})
         """.trimIndent()
             ).execute(
                     mutableMapOf(
@@ -163,10 +175,11 @@ class ArenaDao {
                             "squads" to tournament.settings.squads,
                             "note" to tournament.settings.note,
                             "organizer" to organizer,
+                            "author" to author,
                     )
             ).onItem().transform { id.toString() }
 
-    fun updateTournament(tournamentId: UuidAsText, settings: TournamentSettings): Uni<Boolean> =
+    fun updateTournament(tournamentId: UuidAsText, settings: TournamentSettings, author: UuidAsText): Uni<Boolean> =
 
             client.forUpdate(
                     """
@@ -179,7 +192,11 @@ class ArenaDao {
                 style = #{style},
                 rounds = #{rounds},
                 squads = #{squads},
-                note = #{note}
+                note = #{note},
+                created = now(),
+                createdBy = #{author},
+                updated = now(),
+                updatedBy = #{author}
             WHERE id = #{id}
             """.trimIndent()
             ).execute(
@@ -194,12 +211,88 @@ class ArenaDao {
                             "rounds" to settings.rounds,
                             "squads" to settings.squads,
                             "note" to settings.note,
+                            "author" to author,
                     )
             ).onItem().transform { true }
 
-    fun updateTournamentInscriptions(tournamentId: UuidAsText, subject: String?): Uni<Boolean> {
-        TODO("Not yet implemented")
-    }
+    fun updateTournamentInscriptions(tournamentId: UuidAsText, open: Boolean, author: UuidAsText): Uni<Boolean> =
+
+            client.forUpdate(
+                    """
+                UPDATE ca_tournaments SET
+                inscriptions = #{inscriptions},
+                updated = now(),
+                updatedBy = #{author}
+                WHERE id = #{id}
+                """.trimIndent()
+            ).execute(
+                    mutableMapOf(
+                            "id" to tournamentId,
+                            "inscriptions" to open,
+                            "author" to author,
+                    )
+            ).onItem().transform { true }
+
+    fun updateTournamentNaf(tournamentId: UuidAsText, naf: Boolean, author: UuidAsText): Uni<Boolean> =
+
+            client.forUpdate(
+                    """
+            UPDATE ca_tournaments SET
+            naf = #{naf},
+            updated = now(),
+            updatedBy = #{author}
+            WHERE id = #{id}
+            """.trimIndent()
+            ).execute(
+                    mutableMapOf(
+                            "id" to tournamentId,
+                            "naf" to naf,
+                            "author" to author,
+                    )
+            ).onItem().transform { true }
+
+    fun inscribePlayer(
+            id: UuidAsText = UuidAsText.randomUUID(),
+            tournamentId: UuidAsText,
+            playerInscription: PlayerInscription,
+            author: UuidAsText,
+    ): Uni<String> =
+
+            client.forUpdate(
+                    """
+            INSERT INTO ca_tournaments_inscriptions (id, tournamentId, playerId, teamName, teamRace, nafScore, substitute, created, createdBy, updated, updatedBy)
+            VALUES (#{id}, #{tournamentId}, #{playerId}, #{teamName}, #{teamRace}, #{nafScore}, #{substitute}, now(), #{author}, now(), #{author})
+            """.trimIndent()
+            ).execute(
+                    mutableMapOf(
+                            "id" to id,
+                            "tournamentId" to tournamentId,
+                            "playerId" to playerInscription.playerId,
+                            "teamName" to playerInscription.teamName,
+                            "teamRace" to playerInscription.teamRace,
+                            "nafScore" to playerInscription.nafScore,
+                            "substitute" to playerInscription.substitute,
+                            "author" to author,
+                    )
+            ).onItem().transform { id.toString() }
+
+    fun getTournamentInscriptions(tournamentId: UuidAsText): Multi<PlayerInscription> =
+            client.forQuery(
+                    """
+            SELECT
+                playerId,
+                teamName,
+                teamRace,
+                nafScore,
+                substitute
+            FROM ca_tournaments_inscriptions
+            WHERE tournamentId = #{tournamentId}
+            ORDER BY created DESC
+            """.trimIndent()
+            )
+                    .mapTo(mapToPlayerInscription())
+                    .execute(mutableMapOf("tournamentId" to tournamentId))
+                    .onItem().transformToMulti(RowSet<PlayerInscription>::toMulti)
 
 
 }

@@ -5,7 +5,6 @@ import io.quarkus.security.Authenticated
 import io.smallrye.common.annotation.Blocking
 import io.smallrye.mutiny.Multi
 import io.smallrye.mutiny.Uni
-import io.vertx.codegen.annotations.DataObject
 import jakarta.inject.Inject
 import jakarta.ws.rs.*
 import kotlinx.datetime.LocalDate
@@ -34,16 +33,11 @@ class ArenaResource {
     @Path("me")
     @NoCache
     @Authenticated
-    fun getMe(): Player {
-
-        logger.info("getMe")
-
-        return Player(
-                id = UuidAsText.fromString(jsonWebToken.subject),
-                name = jsonWebToken.name,
-                nafNumber = jsonWebToken.getClaim("naf"),
-        )
-    }
+    fun getMe(): Player = Player(
+            id = UuidAsText.fromString(jsonWebToken.subject),
+            name = jsonWebToken.name,
+            nafNumber = jsonWebToken.getClaim("naf"),
+    )
 
     @GET
     @Path("tournaments")
@@ -60,7 +54,7 @@ class ArenaResource {
     @Path("tournaments")
     fun createTournament(
             tournament: TournamentCreation,
-    ): Uni<String> = arenaDao.createTournament(tournament, jsonWebToken.subject)
+    ): Uni<String> = arenaDao.createTournament(tournament = tournament, organizer = jsonWebToken.subject, author = jsonWebToken.subject.toUuid())
 
     @GET
     @Path("players/{playerId}")
@@ -73,38 +67,26 @@ class ArenaResource {
     fun updateTournament(
             @PathParam("tournamentId") tournamentId: UuidAsText,
             settings: TournamentSettings,
-    ): Uni<Boolean> = arenaDao.getTournament(tournamentId)
-            .onItem().transform {
-                it.organizer.id
-            }
-            .onItem().transform {
-                if (
-                        !jsonWebToken.groups.contains(Roles.admin.name)
-                        && jsonWebToken.subject != it.toString()
-                ) {
-                    logger.debug { "User ${jsonWebToken.name} is not allowed to modify tournament $tournamentId" }
-                    throw WebApplicationException(403)
-                }
-                it
-            }
-            .onItem().transformToUni { id ->
-                arenaDao.updateTournament(tournamentId, settings)
-            }
+    ): Uni<Boolean> = authTournament(tournamentId) {
+        arenaDao.updateTournament(tournamentId, settings, jsonWebToken.subject.toUuid())
+    }
 
     @PUT
     @Path("tournaments/{tournamentId}/inscriptions")
     fun updateTournamentInscriptions(
             @PathParam("tournamentId") tournamentId: UuidAsText,
-            open: Boolean
-    ): Uni<Boolean> = arenaDao.updateTournamentInscriptions(tournamentId, jsonWebToken.subject)
+            inscriptions: TournamentInscriptions,
+    ): Uni<Boolean> = authTournament(tournamentId) {
+        arenaDao.updateTournamentInscriptions(it, inscriptions.open, jsonWebToken.subject.toUuid())
+    }
 
     @PUT
     @Path("tournaments/{tournamentId}/naf")
     fun updateTournamentNaf(
             @PathParam("tournamentId") tournamentId: UuidAsText,
-            naf: Boolean
-    ) {
-        TODO("Not yet implemented")
+            naf: TournamentNaf,
+    ): Uni<Boolean> = authTournament(tournamentId) {
+        arenaDao.updateTournamentNaf(it, naf.official, jsonWebToken.subject.toUuid())
     }
 
     @POST
@@ -112,17 +94,32 @@ class ArenaResource {
     fun inscribePlayer(
             @PathParam("tournamentId") tournamentId: UuidAsText,
             playerInscription: PlayerInscription,
-    ) {
-        TODO("Not yet implemented")
+    ): Uni<String> = authPlayerInscription(tournamentId, playerInscription.playerId) { tid ->
+        arenaDao.inscribePlayer(
+                tournamentId = tid,
+                playerInscription = playerInscription,
+                author = jsonWebToken.subject.toUuid(),
+        )
     }
 
     @GET
     @Path("tournaments/{tournamentId}/players")
     fun getInscribedPlayers(
             @PathParam("tournamentId") tournamentId: UuidAsText,
-    ): Multi<Player> {
-        TODO("Not yet implemented")
-    }
+    ): Multi<TournamentPlayer> = arenaDao.getTournamentInscriptions(tournamentId)
+            .onItem().transformToUni { inscription ->
+                keycloakService.getPlayer(inscription.playerId)
+                        .onItem().transform {
+                            TournamentPlayer(
+                                    it,
+                                    inscription.teamName,
+                                    inscription.teamRace,
+                                    inscription.nafScore,
+                                    inscription.substitute,
+                            )
+                        }
+            }
+            .concatenate()
 
     @POST
     @Path("tournaments/{tournamentId}/squads")
@@ -218,6 +215,7 @@ class ArenaResource {
             val teamName: String,
             val teamRace: String,
             val nafScore: String,
+            val substitute: Boolean = false,
     )
 
     @Serializable
@@ -232,6 +230,7 @@ class ArenaResource {
             val playerId: UuidAsText,
             val teamName: String,
             val teamRace: String,
+            val nafScore: String = "",
             val substitute: Boolean = false,
     )
 
@@ -261,6 +260,16 @@ class ArenaResource {
             val rounds: Int,
             val squads: Boolean,
             val note: String,
+    )
+
+    @Serializable
+    data class TournamentInscriptions(
+            val open: Boolean,
+    )
+
+    @Serializable
+    data class TournamentNaf(
+            val official: Boolean,
     )
 
     @Serializable
@@ -303,5 +312,39 @@ class ArenaResource {
         admin,
         naf,
     }
+
+    private fun <T> authTournament(tournamentId: UuidAsText, update: (id: UuidAsText) -> Uni<T>) =
+            arenaDao.getTournament(tournamentId)
+                    .onItem().transform {
+                        it.organizer.id
+                    }
+                    .onItem().transform {
+                        if (
+                                !jsonWebToken.groups.contains(Roles.admin.name)
+                                && jsonWebToken.subject != it.toString()
+                        ) {
+                            logger.debug { "User ${jsonWebToken.name} is not allowed to modify tournament $tournamentId" }
+                            throw WebApplicationException(403)
+                        }
+                        tournamentId
+                    }
+                    .onItem().transformToUni(update)
+
+    private fun <T> authPlayerInscription(tournamentId: UuidAsText, playerId: UuidAsText, update: (id: UuidAsText) -> Uni<T>) =
+            arenaDao.getTournament(tournamentId)
+                    .onItem().transform {
+                        it.organizer.id
+                    }
+                    .onItem().transform {
+                        if (
+                                !jsonWebToken.groups.contains(Roles.admin.name)
+                                && jsonWebToken.subject != playerId.toString()
+                        ) {
+                            logger.debug { "User ${jsonWebToken.name} is not allowed to inscriber $playerId to tournament $tournamentId" }
+                            throw WebApplicationException(403)
+                        }
+                        tournamentId
+                    }
+                    .onItem().transformToUni(update)
 
 }

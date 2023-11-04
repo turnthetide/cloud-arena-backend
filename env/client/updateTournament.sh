@@ -1,14 +1,14 @@
-source token.sh
+source getTournamentId.sh
 
 #curl -iv "$ca_base/me" -H "Authorization: Bearer ${token}"
-curl -i -X PUT "$ca_base/tournaments/e6e5972a-2a3f-48cd-8a24-3fb27cb8b8fe" \
+curl -i -X PUT "$ca_base/tournaments/$tournamentId" \
     -H "Authorization: Bearer ${token}" \
     -H "Content-Type: application/json" \
     -d '{
 
     "variant": "BloodBowl2020",
     "location": {
-      "address1": "Via della Pace 4",
+      "address1": "Via della Pace 1",
       "address2": "",
       "city": "Carpi",
       "state": "MO",
