@@ -1,5 +1,9 @@
 package arena
 
+import arena.dao.ArenaDao
+import arena.services.KeycloakService
+import arena.services.PairingService
+import arena.services.StandingsService
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.quarkus.security.Authenticated
 import io.smallrye.common.annotation.Blocking
@@ -28,6 +32,12 @@ class ArenaResource {
 
     @Inject
     lateinit var keycloakService: KeycloakService
+
+    @Inject
+    lateinit var standingsService: StandingsService
+
+    @Inject
+    lateinit var pairingService: PairingService
 
     @GET
     @Path("me")
@@ -125,20 +135,73 @@ class ArenaResource {
     @Path("tournaments/{tournamentId}/squads")
     fun inscribeSquad(
             @PathParam("tournamentId") tournamentId: UuidAsText,
-            squadName: String,
-    ) {
-        TODO("Not yet implemented")
+            squad: SquadInscription,
+    ): Uni<String> = authSquadCreation(tournamentId, jsonWebToken.subject.toUuid()) { playerInscription ->
+        arenaDao.inscribeSquad(
+                tournamentId = tournamentId,
+                name = squad.name,
+                author = jsonWebToken.subject.toUuid(),
+        )
     }
+
+    @GET
+    @Path("tournaments/{tournamentId}/squads")
+    fun getSquad(
+            @PathParam("tournamentId") tournamentId: UuidAsText,
+    ): Multi<Squad> = arenaDao.getSquads(tournamentId)
+            .onItem().transformToUni { squad ->
+
+                if (squad.players.isNotEmpty())
+                    Uni.join().all(
+                            squad.players.parallelStream()
+                                    .map { squadPlayer ->
+                                        keycloakService.getPlayer(squadPlayer.playerInscription.playerId)
+                                                .onItem().transform { player ->
+                                                    SquadPlayer(
+                                                            TournamentPlayer(
+                                                                    player,
+                                                                    squadPlayer.playerInscription.teamName,
+                                                                    squadPlayer.playerInscription.teamRace,
+                                                                    squadPlayer.playerInscription.nafScore,
+                                                                    squadPlayer.playerInscription.substitute,
+                                                            ),
+                                                            squadPlayer.role,
+                                                    )
+                                                }
+                                    }
+                                    .toList()
+
+                    )
+                            .andCollectFailures()
+                            .onItem().transform { players ->
+                                Squad(
+                                        squad.id,
+                                        squad.name,
+                                        players,
+                                )
+                            }
+                else
+                    Uni.createFrom().item(Squad(
+                            squad.id,
+                            squad.name,
+                            listOf(),
+                    ))
+            }
+            .concatenate()
 
     @PUT
     @Path("tournaments/{tournamentId}/squads/{squadId}")
     fun assignSquadPlayer(
             @PathParam("tournamentId") tournamentId: UuidAsText,
             @PathParam("squadId") squadId: UuidAsText,
-            playerId: UuidAsText,
-    ) {
-        TODO("Not yet implemented")
-    }
+            inscription: SquadPlayerInscription,
+    ): Uni<String> =
+            arenaDao.inscribeSquadPlayer(
+                    squadId = squadId,
+                    playerId = inscription.playerId,
+                    role = inscription.role,
+                    author = jsonWebToken.subject.toUuid(),
+            )
 
     @PUT
     @Path("tournaments/{tournamentId}/players/{playerId}/substitute")
@@ -154,8 +217,20 @@ class ArenaResource {
     @Path("tournaments/{tournamentId}/rounds/squads")
     fun prepareNextSquadsRound(
             @PathParam("tournamentId") tournamentId: UuidAsText,
-    ): SquadsRound {
-        TODO("Not yet implemented")
+    ): Uni<SquadsRound> = authTournament(tournamentId) {
+
+        arenaDao.createRound(
+                tournamentId = tournamentId,
+                author = jsonWebToken.subject.toUuid(),
+        )
+                .onItem().transformToUni { round ->
+                    standingsService.calculateStandings(tournamentId, round-1)
+                            .onItem().transform { round }
+                }
+
+                .onItem().transformToUni { round ->
+                    pairingService.calculatePairings(tournamentId, round)
+                }
     }
 
     @PUT
@@ -207,6 +282,7 @@ class ArenaResource {
     data class Squad(
             val id: UuidAsText,
             val name: String,
+            val members: List<SquadPlayer>,
     )
 
     @Serializable
@@ -216,6 +292,18 @@ class ArenaResource {
             val teamRace: String,
             val nafScore: String,
             val substitute: Boolean = false,
+    )
+
+    @Serializable
+    data class SquadPlayer(
+            val member: TournamentPlayer,
+            val role: SquadRoles,
+    )
+
+    @Serializable
+    data class SquadPlayerInscription(
+            val playerId: UuidAsText,
+            val role: SquadRoles,
     )
 
     @Serializable
@@ -232,6 +320,11 @@ class ArenaResource {
             val teamRace: String,
             val nafScore: String = "",
             val substitute: Boolean = false,
+    )
+
+    @Serializable
+    data class SquadInscription(
+            val name: String,
     )
 
     @Serializable
@@ -313,6 +406,11 @@ class ArenaResource {
         naf,
     }
 
+    enum class SquadRoles {
+        captain,
+        member,
+    }
+
     private fun <T> authTournament(tournamentId: UuidAsText, update: (id: UuidAsText) -> Uni<T>) =
             arenaDao.getTournament(tournamentId)
                     .onItem().transform {
@@ -340,11 +438,19 @@ class ArenaResource {
                                 !jsonWebToken.groups.contains(Roles.admin.name)
                                 && jsonWebToken.subject != playerId.toString()
                         ) {
-                            logger.debug { "User ${jsonWebToken.name} is not allowed to inscriber $playerId to tournament $tournamentId" }
+                            logger.debug { "User ${jsonWebToken.name} is not allowed to inscribe $playerId to tournament $tournamentId" }
                             throw WebApplicationException(403)
                         }
                         tournamentId
                     }
+                    .onItem().transformToUni(update)
+
+    private fun <T> authSquadCreation(tournamentId: UuidAsText, playerId: UuidAsText, update: (playerInscription: PlayerInscription) -> Uni<T>) =
+            arenaDao.getTournamentInscriptions(tournamentId)
+                    .filter {
+                        it.playerId == playerId
+                    }
+                    .toUni()
                     .onItem().transformToUni(update)
 
 }

@@ -1,4 +1,4 @@
-package arena
+package arena.services
 
 import arena.ArenaResource.Player
 import io.smallrye.common.annotation.Blocking

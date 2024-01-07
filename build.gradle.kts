@@ -45,6 +45,8 @@ dependencies {
     implementation("io.smallrye.reactive:smallrye-mutiny-vertx-sql-client-templates")
     implementation("io.github.oshai:kotlin-logging-jvm:5.1.0")
 
+//    implementation("org.jetbrains.kotlin:kotlin-script-runtime")
+
     implementation("org.jetbrains.kotlinx:dataframe:0.11.1")
     implementation("org.apache.poi:poi-ooxml:5.2.2")
 
@@ -52,6 +54,7 @@ dependencies {
 
     testImplementation("io.quarkus:quarkus-junit5")
     testImplementation("io.rest-assured:rest-assured")
+    implementation(kotlin("script-runtime"))
 }
 
 group = "cloud-arena"

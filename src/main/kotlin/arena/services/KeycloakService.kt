@@ -1,6 +1,7 @@
-package arena
+package arena.services
 
 import arena.ArenaResource.Player
+import arena.UuidAsText
 import io.quarkus.cache.CacheResult
 import io.smallrye.mutiny.Uni
 import io.vertx.mutiny.core.Vertx
@@ -25,21 +26,23 @@ class KeycloakService {
     @ActivateRequestContext
     @CacheResult(cacheName = "players")
     fun getPlayer(playerId: UUID): Uni<Player> =
-        vertx.executeBlocking(
-            Uni.createFrom().item {
-                keycloak.realm(realm)
-                    .users()
-                    .get(playerId.toString())
-                    .toRepresentation()
-                    .toPlayer()
-            }
-        )
+            vertx.executeBlocking(
+                    Uni.createFrom().item {
+                        keycloak.realm(realm)
+                                .users()
+                                .get(playerId.toString())
+                                .toRepresentation()
+                                .toPlayer()
+                    }
+            )
 
     private fun UserRepresentation.toPlayer(): Player =
-        Player(
-            UuidAsText.fromString(this.id),
-            this.username,
-            this.attributes["naf"]?.first() ?: "",
-        )
+            Player(
+                    UuidAsText.fromString(this.id),
+                    this.username,
+                    this.attributes["naf"]?.first() ?: "",
+            )
 
+    fun UuidAsText.toPlayer() = getPlayer(this)
+    
 }

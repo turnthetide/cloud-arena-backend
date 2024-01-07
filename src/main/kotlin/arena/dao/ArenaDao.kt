@@ -1,6 +1,9 @@
-package arena
+package arena.dao
 
 import arena.ArenaResource.*
+import arena.UuidAsText
+import arena.services.KeycloakService
+import arena.services.StandingsService
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.smallrye.mutiny.Multi
 import io.smallrye.mutiny.Uni
@@ -77,6 +80,17 @@ class ArenaDao {
             val organizerId: UuidAsText,
     )
 
+    data class SquadPlayerEntity(
+            val playerInscription: PlayerInscription,
+            val role: SquadRoles,
+    )
+
+    data class SquadPlayersEntity(
+            val id: UuidAsText,
+            val name: String,
+            val players: MutableList<SquadPlayerEntity>,
+    )
+
     fun getTournaments(): Multi<Tournament> =
             client.forQuery(
                     """
@@ -122,7 +136,7 @@ class ArenaDao {
             client.forQuery(
                     """
                     SELECT 
-                        id, 
+                        id,
                         name, 
                         naf, 
                         variant, 
@@ -276,6 +290,27 @@ class ArenaDao {
                     )
             ).onItem().transform { id.toString() }
 
+    fun inscribeSquad(
+            id: UuidAsText = UuidAsText.randomUUID(),
+            tournamentId: UuidAsText,
+            name: String,
+            author: UuidAsText,
+    ): Uni<String> =
+
+            client.forUpdate(
+                    """
+            INSERT INTO ca_squads (id, tournamentId, name, created, createdBy, updated, updatedBy)
+            VALUES (#{id}, #{tournamentId}, #{name}, now(), #{author}, now(), #{author})
+            """.trimIndent()
+            ).execute(
+                    mutableMapOf(
+                            "id" to id,
+                            "tournamentId" to tournamentId,
+                            "name" to name,
+                            "author" to author,
+                    )
+            ).onItem().transform { id.toString() }
+
     fun getTournamentInscriptions(tournamentId: UuidAsText): Multi<PlayerInscription> =
             client.forQuery(
                     """
@@ -294,5 +329,116 @@ class ArenaDao {
                     .execute(mutableMapOf("tournamentId" to tournamentId))
                     .onItem().transformToMulti(RowSet<PlayerInscription>::toMulti)
 
+    fun getSquads(tournamentId: UuidAsText): Multi<SquadPlayersEntity> =
+            client.forQuery(
+                    """
+            SELECT
+                s.id,
+                s.name,
+                pi.playerid,
+                pi.teamName,
+                pi.teamRace,
+                pi.nafScore,
+                pi.substitute,
+                sm.role
+            FROM ca_squads s
+            LEFT OUTER JOIN ca_squads_members sm ON s.id = sm.squadId
+            LEFT OUTER JOIN ca_tournaments_inscriptions pi ON sm.playerId = pi.playerId
+            WHERE s.tournamentId = #{tournamentId}
+            ORDER BY s.name ASC
+            """.trimIndent()
+            )
+                    .execute(mutableMapOf("tournamentId" to tournamentId))
+                    .onItem().transformToMulti(RowSet<Row>::toMulti)
+                    .collect().`in`(
+                            { mutableMapOf<UUID, SquadPlayersEntity>() }
+                    ) { map, row ->
+                        val squadId = row.getUUID("id")
+                        val squad = map[squadId] ?: SquadPlayersEntity(
+                                squadId,
+                                row.getString("name"),
+                                mutableListOf(),
+                        )
+                        if (row.getUUID("playerid") != null)
+                            squad.players.add(SquadPlayerEntity(
+                                    mapToPlayerInscription().map(row),
+                                    SquadRoles.valueOf(row.getString("role"))
+                            ))
+                        map[squadId] = squad
 
+                    }
+                    .map { map ->
+                        map.values.toList()
+                    }
+                    .onItem().transformToMulti {
+                        Multi.createFrom().items(it.stream())
+                    }
+
+    fun inscribeSquadPlayer(
+            id: UuidAsText = UuidAsText.randomUUID(),
+            squadId: UuidAsText,
+            playerId: UuidAsText,
+            role: SquadRoles,
+            author: UUID,
+    ): Uni<String> =
+
+            client.forUpdate(
+                    """
+            INSERT INTO ca_squads_members (id, squadId, playerId, role, created, createdBy, updated, updatedBy)
+            VALUES (#{id}, #{squadId}, #{playerId}, #{role}, now(), #{author}, now(), #{author})
+            """.trimIndent()
+            ).execute(
+                    mutableMapOf(
+                            "id" to id,
+                            "squadId" to squadId,
+                            "playerId" to playerId,
+                            "role" to role,
+                            "author" to author,
+                    )
+            ).onItem().transform { id.toString() }
+
+    fun createRound(
+            id: UuidAsText = UuidAsText.randomUUID(),
+            tournamentId: UuidAsText,
+            author: UUID,
+    ): Uni<Int> =
+
+            client.forQuery(
+                    """
+            select coalesce(
+                        (
+            	select round + 1 from ca_rounds
+            	where
+            		tournamentId = #{tournamentId}
+            		order by round desc limit 1),
+            	1) as round
+            """.trimIndent()
+            )
+                    .execute(mutableMapOf("tournamentId" to tournamentId))
+                    .onItem().transform { rowSet ->
+                        rowSet.first().getInteger("round")
+                    }
+                    .onItem().transformToUni { round ->
+                        client.forUpdate(
+                                """
+                    INSERT INTO ca_rounds (id, tournamentId, round, created, createdBy, updated, updatedBy)
+                    VALUES (#{id}, #{tournamentId}, #{round}, now(), #{author}, now(), #{author})
+                    """.trimIndent()
+                        ).execute(
+                                mutableMapOf(
+                                        "id" to id,
+                                        "tournamentId" to tournamentId,
+                                        "round" to round,
+                                        "author" to author,
+                                )
+                        ).onItem().transform { round }
+                    }
+
+    fun setStandings(tournamentId: UuidAsText, round: Int, name: String, scores: List<StandingsService.Score>): Uni<Void> {
+        TODO("Not yet implemented")
+    }
+
+    fun getPlayerScore(tournamentId: UuidAsText, round: Int, playerId: UuidAsText): StandingsService.Score {
+        TODO("Not yet implemented")
+    }
 }
